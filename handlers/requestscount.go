@@ -1,33 +1,59 @@
 package handlers
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"sync"
+	"time"
+
+	"github.com/malligerearun/requests-count/web"
 )
 
-
-func requestsCount(w http.ResponseWriter, r *http.Request)  {
-	data := struct {		
-		Count int `json:"Number of requests in the last 60 seconds"`
-	} {
-		Count: 10,
-	}
-	
-	respond(data, w)
+type requestCount struct {
+	sync.Mutex
+	requestTimeStamps map[int64]int32
 }
 
-func respond(data interface{}, w http.ResponseWriter)  {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	jsonData, err := json.Marshal(data)
-	if err!=nil {
-		log.Println(err)
-		return
+func NewRequestCount() requestCount {
+	return requestCount{
+		requestTimeStamps: make(map[int64]int32),
 	}
-	if _, err := w.Write(jsonData); err!=nil {
-		fmt.Println(err)
-		return
+}
+
+func (rc *requestCount)requestsCount(w http.ResponseWriter, r *http.Request) {
+	currentTime := time.Now().Unix()
+	rc.recordRequest(currentTime)
+	log.Printf("requests-count::GET:: new request %v %v", rc.getRequestCount(currentTime), time.Unix(currentTime, 0))
+	data := struct {		
+		Count int32 `json:"Number of requests in the last 60 seconds"`
+	} {
+		Count: rc.getRequestCount(currentTime),
 	}
+	
+	web.Respond(data, w)
+}
+
+func (rc *requestCount) recordRequest(timestamp int64) {
+	rc.Lock()
+	defer rc.Unlock()
+	rc.requestTimeStamps[timestamp]++
+	for seconds := range rc.requestTimeStamps {
+		if seconds < (timestamp - 60) {
+			delete(rc.requestTimeStamps, seconds)
+		}
+	}
+}
+
+func (rc *requestCount) getRequestCount(timestamp int64) int32 {
+	var total int32
+	rc.Lock()
+	defer rc.Unlock()
+	for seconds, count := range rc.requestTimeStamps {
+		if seconds > (timestamp - 60) {
+			total += count
+		} else {
+			delete(rc.requestTimeStamps, seconds)
+		}
+	}
+	return total
 }
