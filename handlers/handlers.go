@@ -3,13 +3,13 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/dimfeld/httptreemux/v5"
+	"github.com/malligerearun/requests-count/web"
 )
 
-var rc  = NewRequestCount()
+var rc = NewRequestCount()
 
-func API() http.Handler {
-	appMux := httptreemux.NewContextMux()
-	appMux.Handle(http.MethodGet, "/requests-count", rc.requestsCount)
-	return appMux
+func API(requestsCount chan map[int64]int32) http.Handler {
+	app := web.NewApp(requestsCount)
+	app.Handle(http.MethodGet, "/requests-count", rc.requestsCount)
+	return app.Mux
 }

@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"encoding/gob"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,21 +18,45 @@ type requestCount struct {
 }
 
 func NewRequestCount() requestCount {
+	matches, err := filepath.Glob("requestCountFile")
+	if err != nil || len(matches) == 0 {
+		return requestCount{
+			requestTimeStamps: make(map[int64]int32),
+		}
+	}
+
+	r, err := os.Open("requestCountFile")
+	if err != nil {
+		panic(err)
+	}
+
+	decoder := gob.NewDecoder(r)
+	var count map[int64]int32
+	
+	err = decoder.Decode(&count)
+	if err != nil {
+		panic(err)
+	}
+	
 	return requestCount{
-		requestTimeStamps: make(map[int64]int32),
+		requestTimeStamps: count,
 	}
 }
 
-func (rc *requestCount)requestsCount(w http.ResponseWriter, r *http.Request) {
+func (rc *requestCount) requestsCount(w http.ResponseWriter, r *http.Request, requestsCount chan map[int64]int32) {
 	currentTime := time.Now().Unix()
 	rc.recordRequest(currentTime)
-	log.Printf("requests-count::GET:: new request %v %v", rc.getRequestCount(currentTime), time.Unix(currentTime, 0))
-	data := struct {		
-		Count int32 `json:"Number of requests in the last 60 seconds"`
-	} {
-		Count: rc.getRequestCount(currentTime),
-	}
+	reqCnt := rc.getRequestCount(currentTime)
+	requestsCount <- rc.requestTimeStamps
 	
+	log.Printf("requests-count::GET:: new request %v %v", reqCnt, time.Unix(currentTime, 0))
+	
+	data := struct {
+		Count int32 `json:"Number of requests in the last 60 seconds"`
+	}{
+		Count: reqCnt,
+	}
+
 	web.Respond(data, w)
 }
 
