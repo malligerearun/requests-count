@@ -21,6 +21,7 @@ func NewRequestCount() requestCount {
 	matches, err := filepath.Glob("requestCountFile")
 	if err != nil || len(matches) == 0 {
 		return requestCount{
+			mu: new(sync.Mutex),
 			requestTimeStamps: make(map[int64]int32),
 		}
 	}
