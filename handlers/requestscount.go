@@ -13,7 +13,7 @@ import (
 )
 
 type requestCount struct {
-	sync.Mutex
+	mu *sync.Mutex
 	requestTimeStamps map[int64]int32
 }
 
@@ -39,15 +39,15 @@ func NewRequestCount() requestCount {
 	}
 	
 	return requestCount{
+		mu: new(sync.Mutex),
 		requestTimeStamps: count,
 	}
 }
 
 func (rc *requestCount) requestsCount(w http.ResponseWriter, r *http.Request, requestsCount chan map[int64]int32) {
 	currentTime := time.Now().Unix()
-	rc.recordRequest(currentTime)
+	rc.recordRequest(currentTime, requestsCount)
 	reqCnt := rc.getRequestCount(currentTime)
-	requestsCount <- rc.requestTimeStamps
 	
 	log.Printf("requests-count::GET:: new request %v %v", reqCnt, time.Unix(currentTime, 0))
 	
@@ -60,10 +60,11 @@ func (rc *requestCount) requestsCount(w http.ResponseWriter, r *http.Request, re
 	web.Respond(data, w)
 }
 
-func (rc *requestCount) recordRequest(timestamp int64) {
-	rc.Lock()
-	defer rc.Unlock()
+func (rc *requestCount) recordRequest(timestamp int64, requestsCount chan map[int64]int32) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
 	rc.requestTimeStamps[timestamp]++
+	requestsCount <- rc.requestTimeStamps
 	for seconds := range rc.requestTimeStamps {
 		if seconds < (timestamp - 60) {
 			delete(rc.requestTimeStamps, seconds)
@@ -73,8 +74,8 @@ func (rc *requestCount) recordRequest(timestamp int64) {
 
 func (rc *requestCount) getRequestCount(timestamp int64) int32 {
 	var total int32
-	rc.Lock()
-	defer rc.Unlock()
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
 	for seconds, count := range rc.requestTimeStamps {
 		if seconds > (timestamp - 60) {
 			total += count
